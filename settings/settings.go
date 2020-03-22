@@ -63,9 +63,28 @@ func (set *Settings) LoadSettings() error {
 		return err
 	}
 
-	err = json.Unmarshal([]byte(fileContent), &set.Data)
-	if err != nil {
-		return err
+	data, isMap := set.Data.(map[string]interface{})
+	if isMap {
+		// mappa che contiene strutture; deserializza ogni singola struttura, anche se in modo inefficiente
+		var temp map[string]interface{}
+		err = json.Unmarshal([]byte(fileContent), &temp)
+		if err != nil {
+			return err
+		}
+
+		for key, item := range temp {
+			tempj, _ := json.Marshal(item)
+
+			err := json.Unmarshal(tempj, data[key])
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		err = json.Unmarshal([]byte(fileContent), &set.Data)
+		if err != nil {
+			return err
+		}
 	}
 
 	//fmt.Println(set)

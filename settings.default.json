@@ -1,0 +1,18 @@
+{
+	"Bot": {
+		// Token API telegram
+		"SecureToken": "xxxxx",
+		
+		// Processa i messaggi in cui il bot era offline
+		"RecoverOldUpdates": false,
+		
+		// Può essere un carattere o una parola ("!comando", "parola comando")
+		"CommandWord": "!",
+		
+		// Processa anche i messaggi senza comandi
+		"ProcessGroupMessages": true,
+		
+		// Lasso di tempo in cui il bot smette di parsare i messaggi senza comandi (vedi comando /silence)
+		"SilenceTimeoutMins": 30,
+	}
+}

@@ -9,31 +9,49 @@ import (
 )
 
 // Restituisce true se il messaggio può essere processato
-func (bot *Bot) AllowedUpdate(update *tgbotapi.Update, command string) bool {
+func (bot *Bot) allowedUpdate(update *tgbotapi.Update) (allowed bool, canProcessCommands bool) {
+	var message *tgbotapi.Message
+
 	if update.Message != nil {
+		message = update.Message
+	} else if update.EditedMessage != nil {
+		message = update.EditedMessage
+	}
+
+	if message != nil {
 		// Message
 
-		if command == superCommandOwner {
-			// i super comandi possono essere ricevuti da sconosciuti, ma solo in chat private
-			if !update.Message.Chat.IsPrivate() {
-				if bot.Debug {
-					log.Println("(firewall) super command not allowed in public chats")
-				}
-				return false
-			}
-
-			return true
+		if message.From.IsBot {
+			// i messaggi dei bot vengono scartati
+			return false, false
 		}
 
-		_, ok := bot.getUserByID(update.Message.From.ID)
+		isPrivateChat := message.Chat.IsPrivate()
 
-		if !ok {
-			if bot.Debug {
-				log.Println("(firewall) From ID", update.Message.From.ID, "not in allowed IDs")
-			}
-			return false
+		if isPrivateChat && (message.Command() == superCommandOwner) {
+			// i super comandi possono essere ricevuti da sconosciuti, ma solo in chat private
+			allowed = true
+			canProcessCommands = true
+			return
+		}
+
+		_, ok := bot.getUserByID(message.From.ID)
+		if ok {
+			allowed = true
+			canProcessCommands = true
+			return
+		}
+
+		if bot.config.ProcessGroupMessages && !isPrivateChat {
+			allowed = true
+			canProcessCommands = false
+			return
+		}
+
+		if bot.Debug {
+			log.Println("(firewall) From ID", message.From.ID, "not in allowed IDs")
 		}
 	}
 
-	return true
+	return
 }

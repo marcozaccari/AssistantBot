@@ -1,0 +1,17 @@
+{
+	"Bot": {
+		"SecureToken": "xxxxxxxxxxxxxxxxxxxxxxx",
+		"RecoverOldUpdates": false,
+		"ProcessGroupMessages": true,
+		"CommandWord": "|",
+		"OwnerID": 113087795,
+		"Users": [
+			{
+				"ID": 113087795,
+				"Username": "zazza_0",
+				"Group": "owner",
+				"PrivateChatID": 113087795
+			}
+		]
+	}
+}

@@ -2,15 +2,14 @@ package bot
 
 import (
 	"log"
-	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-func (bot *Bot) processUpdate(update tgbotapi.Update, cProcessor CommandsProcessor) error {
+func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 
 	if bot.Debug {
-		log.Printf("(new update) %+v\n", update.Message)
+		log.Printf("(new update) %+v %+v\n", update.Message, update.EditedMessage)
 	}
 
 	var command string
@@ -20,124 +19,94 @@ func (bot *Bot) processUpdate(update tgbotapi.Update, cProcessor CommandsProcess
 	var replyUserID int
 	var replyUsername string
 
-	if update.Message != nil {
-		command, params = bot.parseCommand(update.Message)
-		if command == "" {
-			return nil
-		}
-	}
-
-	if !bot.AllowedUpdate(&update, command) {
+	allowed, canProcessCommands := bot.allowedUpdate(&update)
+	if !allowed {
 		return nil
 	}
 
 	// parse update
+	var message *tgbotapi.Message
+	var edited bool
 
 	if update.Message != nil {
-		chatID = update.Message.Chat.ID
-		isPrivateChat = update.Message.Chat.IsPrivate()
+		message = update.Message
+	} else if update.EditedMessage != nil {
+		message = update.EditedMessage
+		edited = true
+	}
 
-		if update.Message.ReplyToMessage != nil {
-			replyUserID = update.Message.ReplyToMessage.From.ID
-			replyUsername = update.Message.ReplyToMessage.From.UserName
+	if message != nil {
+		chatID = message.Chat.ID
+		isPrivateChat = message.Chat.IsPrivate()
+
+		if message.ReplyToMessage != nil {
+			replyUserID = message.ReplyToMessage.From.ID
+			replyUsername = message.ReplyToMessage.From.UserName
 		}
 
-		if bot.Debug {
-			log.Printf("(stack) Command from %s/%s: %s %v\n", update.Message.Chat.Title, update.Message.From.UserName, command, params)
-		}
-
-		u, ok := bot.getUserByID(update.Message.From.ID)
-		if ok {
-			// risincronizza se necessario i dati dell'utente
-			if u.Username != update.Message.From.UserName {
-				bot.updateUsername(u, update.Message.From.UserName)
-			}
-			if isPrivateChat &&
-				(u.PrivateChatID != chatID) {
-				bot.updateUserPrivateChatID(u, chatID)
-			}
-		}
-
-		handler := CommandHandler{
-			userID:        update.Message.From.ID,
+		handler := MessageHandler{
+			userID:        message.From.ID,
+			username:      message.From.UserName,
 			chatID:        chatID,
 			isPrivate:     isPrivateChat,
-			messageID:     update.Message.MessageID,
+			messageID:     message.MessageID,
 			replyUserID:   replyUserID,
 			replyUsername: replyUsername,
 		}
+		if edited {
+			handler.editMessageID = bot.sentMessages.lookupSenderSent[message.MessageID]
+		}
 
-		// command is preparsed above
-		switch command {
+		if canProcessCommands {
+			var ok bool
+			command, params, ok = bot.parseCommand(message)
+			if ok {
 
-		case superCommandOwner:
-			// reset owner
-			if len(params) > 0 {
-				if params[0] == bot.config.SecureToken {
-					bot.resetOwner(update.Message.From.ID, update.Message.From.UserName, chatID)
-
-					text := "You are the owner of this bot, now"
-					bot.sendMessage(chatID, update.Message.MessageID, text)
+				if bot.Debug {
+					log.Printf("(stack) Command from %s/%s: %s %v\n", message.Chat.Title, message.From.UserName, command, params)
 				}
-			}
 
-		case commandUser:
-			err := bot.processUserCommand(handler, params)
-			if err != nil {
-				return err
-			}
+				u, ok := bot.getUserByID(message.From.ID)
+				if ok {
+					handler.group = u.Group
 
-		default:
-			if cProcessor != nil {
-				err := cProcessor.ProcessCommand(handler, command, params)
+					// risincronizza se necessario i dati dell'utente
+					if u.Username != message.From.UserName {
+						bot.updateUsername(u, message.From.UserName)
+					}
+					if isPrivateChat &&
+						(u.PrivateChatID != chatID) {
+						bot.updateUserPrivateChatID(u, chatID)
+					}
+				}
+
+				for _, p := range bot.processors {
+					processed, err := p.ProcessCommand(handler, command, params)
+					if err != nil {
+						return err
+					}
+					if processed {
+						break
+					}
+				}
+
+				return nil
+			}
+		}
+
+		// controlla se è il caso di processare i messaggi semplici
+		if bot.config.ProcessGroupMessages && !bot.silenceOn {
+			for _, p := range bot.processors {
+				processed, err := p.ProcessMessage(handler, message.Text)
 				if err != nil {
 					return err
+				}
+				if processed {
+					break
 				}
 			}
 		}
 	}
 
 	return nil
-}
-
-// Parsa un messaggio ottenendo comando e parametri.
-// I comandi vengono recepiti nei seguenti modi:
-// - standard: /comando parametri oppure /comando@bot parametri
-// - citazione: @bot comando parametri
-// - messaggio privato: comando parametri
-// - risposta a un messaggio del bot: comando parametri
-// - parola d'ordine: config.CommandWord comando parametri
-func (bot *Bot) parseCommand(message *tgbotapi.Message) (command string, params []string) {
-	if cmd := message.Command(); cmd != "" {
-		// /comando standard
-		command = cmd
-		params = strings.Fields(message.CommandArguments())
-		return
-	}
-
-	fields := strings.Fields(message.Text)
-	var paramsIdx int
-
-	if fields[0] == "@"+bot.username || fields[0] == bot.config.CommandWord {
-		if len(fields) > 1 {
-			command = fields[1]
-			paramsIdx = 2
-		}
-	} else {
-		if !message.Chat.IsPrivate() {
-			return
-		}
-
-		command = fields[0]
-		paramsIdx = 1
-	}
-
-	if len(fields) <= paramsIdx {
-		params = []string{}
-	} else {
-		params = make([]string, len(fields)-paramsIdx)
-		copy(params, fields[paramsIdx:])
-	}
-
-	return
 }

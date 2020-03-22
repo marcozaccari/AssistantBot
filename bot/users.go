@@ -6,9 +6,17 @@ import (
 	"strconv"
 )
 
+type userGroup string
+
+const (
+	groupOwner userGroup = "owner"
+	groupAdmin           = "admin"
+)
+
 type user struct {
 	ID            int
 	Username      string
+	Group         userGroup
 	PrivateChatID int64
 }
 
@@ -61,7 +69,7 @@ func (bot *Bot) deleteUser(userID int) bool {
 		if u.ID == userID {
 			bot.config.Users[i] = bot.config.Users[len(bot.config.Users)-1]
 			bot.config.Users = bot.config.Users[:len(bot.config.Users)-1]
-			bot.initUsers(false)
+			bot.initUsers()
 			break
 		}
 	}
@@ -80,16 +88,14 @@ func (bot *Bot) resetOwner(newOwnerID int, OwnerUsername string, privateChatID i
 
 	bot.SaveConfig()
 
-	_, ok := bot.getUserByID(newOwnerID)
-	if !ok {
-		u := user{
-			ID:            newOwnerID,
-			Username:      OwnerUsername,
-			PrivateChatID: privateChatID,
-		}
-
-		bot.addUser(u, false)
+	u := user{
+		ID:            newOwnerID,
+		Username:      OwnerUsername,
+		Group:         groupOwner,
+		PrivateChatID: privateChatID,
 	}
+
+	bot.addUser(u, false)
 }
 
 func (bot *Bot) updateUserData(u *user, newu user) {
@@ -119,7 +125,7 @@ func (bot *Bot) updateUserPrivateChatID(u *user, privateChatID int64) {
 	bot.updateUserData(u, nu)
 }
 
-func (bot *Bot) initUsers(verbose bool) {
+func (bot *Bot) initUsers() {
 	// make lookup
 	bot.lookupUsers = make(map[int]*user)
 
@@ -130,33 +136,42 @@ func (bot *Bot) initUsers(verbose bool) {
 		verboseIDs = append(verboseIDs, user.ID)
 	}
 
-	if verbose {
+	if bot.Verbose {
 		log.Println("Users IDs", verboseIDs)
 	}
 }
 
-func (bot *Bot) processUserCommand(handler CommandHandler, params []string) error {
-	showHelp := func() {
-		help :=
-			"<code>user</code> command usage:\n" +
-				"  <code>list</code>  Show users list\n" +
-				"  <code>add [id]</code>  Add user to whitelist\n" +
-				"  <code>remove [id|username]</code>  Remove user from whitelist\n" +
-				"\nHint: <code>id</code> could be avoided by replying to a user's message"
-
-		bot.SendCommandResponseToPrivate(handler, help)
+func (bot *Bot) processUserCommand(handler MessageHandler, params []string) error {
+	if handler.group != groupOwner && handler.group != groupAdmin {
+		if bot.Verbose {
+			log.Println("No permission for command")
+		}
+		return nil
 	}
 
-	getUser := func() (int, string, string) {
+	showHelp := func() {
+		help :=
+			"<code>user</code> command parameters:\n" +
+				"  <code>list</code>  Show users list\n" +
+				"  <code>add {id}</code>  Add user to whitelist\n" +
+				"  <code>remove {id|username}</code>  Remove user from whitelist\n" +
+				"  <code>group [none|admin] {id|username}</code>  Change user's group\n" +
+				"\nHint: <code>{id}</code> could be avoided by replying to a user's message"
+
+		opt := bot.NewMessageResponseOpt()
+		bot.SendMessageResponseToPrivate(handler, help, opt)
+	}
+
+	getUser := func(paramIdx int) (int, string, string) {
 		var userID int
 		var username string
 		var errorStr string
 
-		if len(params) > 1 {
+		if len(params) > paramIdx {
 			var err error
-			userID, err = strconv.Atoi(params[1])
+			userID, err = strconv.Atoi(params[paramIdx])
 			if err != nil {
-				name := params[1]
+				name := params[paramIdx]
 				if name[0] == '@' {
 					name = name[1:]
 				}
@@ -201,7 +216,7 @@ func (bot *Bot) processUserCommand(handler CommandHandler, params []string) erro
 
 	switch params[0] {
 	case "add":
-		userID, username, response = getUser()
+		userID, username, response = getUser(1)
 
 		if userID > 0 {
 			if userID == handler.userID {
@@ -213,36 +228,73 @@ func (bot *Bot) processUserCommand(handler CommandHandler, params []string) erro
 				}
 
 				if bot.addUser(u, true) {
-					response = fmt.Sprintf("User <b>%v %v</b> added to whitelist", userID, username)
+					response = fmt.Sprintf("User <code>%v %v</code> added to whitelist", userID, username)
 				} else {
-					response = fmt.Sprintf("User <b>%v</b> already in whitelist", userID)
+					response = fmt.Sprintf("User <code>%v</code> already in whitelist", userID)
 				}
 			}
 		}
 
 	case "remove":
-		userID, _, response = getUser()
+		userID, _, response = getUser(1)
 
 		if userID > 0 {
 			if userID == bot.config.OwnerID {
 				response = "Cannot remove my owner"
 			} else {
 				if bot.deleteUser(userID) {
-					response = fmt.Sprintf("User <b>%v</b> deleted from whitelist", userID)
+					response = fmt.Sprintf("User <code>%v</code> deleted from whitelist", userID)
 				} else {
-					response = fmt.Sprintf("User <b>%v</b> not in whitelist", userID)
+					response = fmt.Sprintf("User <code>%v</code> not in whitelist", userID)
 				}
 			}
+		}
+
+	case "group":
+		if len(params) < 2 {
+			showHelp()
+			return nil
+		}
+		group := params[1]
+		if group != "none" && group != "admin" {
+			showHelp()
+			return nil
+		}
+
+		userID, username, response = getUser(2)
+
+		if userID > 0 {
+			u, ok := bot.getUserByID(userID)
+			if !ok {
+				response = fmt.Sprintf("User <code>%v</code> not exists", userID)
+				break
+			}
+
+			if group == "none" {
+				u.Group = ""
+			} else {
+				u.Group = userGroup(group)
+			}
+			bot.addUser(*u, false)
+
+			response = fmt.Sprintf("User <code>%v %v</code> set to <code>%v</code>", userID, username, group)
 		}
 
 	case "list":
 		response = "Users list:\n\n"
 
 		for _, u := range bot.lookupUsers {
-			response += fmt.Sprint(u.ID)
+			response += "<code>" + fmt.Sprint(u.ID) + "</code>"
 
 			if u.Username != "" {
-				response += "\t<b>" + u.Username + "</b>"
+				response += " <b>" + u.Username + "</b>"
+			}
+
+			switch u.Group {
+			case groupOwner:
+				response += "<code>★</code>"
+			case groupAdmin:
+				response += "<code>☆</code>"
 			}
 
 			if u.PrivateChatID == 0 {
@@ -260,7 +312,8 @@ func (bot *Bot) processUserCommand(handler CommandHandler, params []string) erro
 	}
 
 	if response != "" {
-		bot.SendCommandResponse(handler, response, false)
+		opt := bot.NewMessageResponseOpt()
+		bot.SendMessageResponseToPrivate(handler, response, opt)
 	}
 
 	return nil
