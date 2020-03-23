@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"fmt"
 
 	"modulo.srl/AssistantBot/bot"
 )
@@ -19,7 +20,7 @@ type myProcessor struct {
 
 func (p *myProcessor) ProcessCommand(handler bot.MessageHandler, command string, params []string) (bool, error) {
 	if command == "hello" {
-		message := "Hello World!"
+		message := fmt.Sprintln("Hello World!", p.config)
 
 		opt := tbot.NewMessageResponseOpt()
 		tbot.SendMessageResponse(handler, message, opt)
