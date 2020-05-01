@@ -9,18 +9,18 @@ import (
 
 // MessageHandler contiene i riferimenti utili all'invio messaggi dai metodi di processing
 type MessageHandler struct {
-	userID   int
-	username string
-	group    userGroup
+	UserID   int
+	Username string
+	Group    userGroup
 
-	chatID    int64
-	isPrivate bool
+	ChatID    int64
+	IsPrivate bool
 
-	messageID     int // messaggio a cui appartiene il comando
-	editMessageID int // se > 0 messaggio da editare anzichè inviarne uno nuovo
+	MessageID     int // messaggio a cui appartiene il comando
+	EditMessageID int // se > 0 messaggio da editare anzichè inviarne uno nuovo
 
-	replyUserID   int // utente del messaggio a cui si è risposto
-	replyUsername string
+	ReplyUserID   int // utente del messaggio a cui si è risposto
+	ReplyUsername string
 }
 
 // MessageResponseOpt contiene i flag di modalità di risposta
@@ -35,6 +35,9 @@ type MessageResponseOpt struct {
 // ogni quanti messaggi inviati (x2) deve pulire la prima metà di lookup*
 const gcMaxSentMessages = 100
 
+// lega i messaggi utente con i messaggi di risposta del bot.
+// in questo modo se l'utente modifica un suo precedente messaggio-comando,
+// anche il bot risponde modificando il suo precedente messaggio.
 type sentMessagesLookups struct {
 	locker sync.Mutex
 
@@ -54,30 +57,36 @@ func (bot *Bot) NewMessageResponseOpt() MessageResponseOpt {
 	}
 }
 
+func (bot *Bot) DeleteMessage(chatID int64, messageID int) error {
+	mc := tgbotapi.NewDeleteMessage(chatID, messageID)
+	_, err := bot.Tgbot.DeleteMessage(mc)
+	return err
+}
+
 // SendMessageResponse invia un messaggio di risposta all'handler
 func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt MessageResponseOpt) {
 	var chatID int64
 
-	if opt.ForcePrivate && !handler.isPrivate {
-		u, ok := bot.getUserByID(handler.userID)
+	if opt.ForcePrivate && !handler.IsPrivate {
+		u, ok := bot.getUserByID(handler.UserID)
 		if !ok {
 			log.Println("Cannot send to private chat", handler, text)
 			return
 		}
 		chatID = u.PrivateChatID
 	} else {
-		chatID = handler.chatID
+		chatID = handler.ChatID
 	}
 
 	var replyMessageID int
-	if opt.ReplyToSenderMessage && (chatID == handler.chatID) && !opt.ReplaceSenderMessage {
-		replyMessageID = handler.messageID
+	if opt.ReplyToSenderMessage && (chatID == handler.ChatID) && !opt.ReplaceSenderMessage {
+		replyMessageID = handler.MessageID
 	}
 
 	// Send
 
-	if handler.editMessageID > 0 {
-		msg := tgbotapi.NewEditMessageText(chatID, handler.editMessageID, text)
+	if handler.EditMessageID > 0 {
+		msg := tgbotapi.NewEditMessageText(chatID, handler.EditMessageID, text)
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
 		} else {
@@ -85,7 +94,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		}
 		msg.DisableWebPagePreview = !opt.LinksPreview
 
-		bot.tgbot.Send(msg)
+		bot.Tgbot.Send(msg)
 	} else {
 		msg := tgbotapi.NewMessage(chatID, text)
 		msg.ReplyToMessageID = replyMessageID
@@ -97,22 +106,22 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 
 		msg.DisableWebPagePreview = !opt.LinksPreview
 
-		newmsg, _ := bot.tgbot.Send(msg)
+		newmsg, _ := bot.Tgbot.Send(msg)
 
 		if opt.ReplaceSenderMessage {
 			cfg := tgbotapi.DeleteMessageConfig{
-				ChatID:    handler.chatID,
-				MessageID: handler.messageID,
+				ChatID:    handler.ChatID,
+				MessageID: handler.MessageID,
 			}
 
-			bot.tgbot.DeleteMessage(cfg)
+			bot.Tgbot.DeleteMessage(cfg)
 		} else {
 			// indicizza il messaggio inviato nella lookup
 			bot.sentMessages.locker.Lock()
 			defer bot.sentMessages.locker.Unlock()
 
-			bot.sentMessages.lookupSenderSent[handler.messageID] = newmsg.MessageID
-			bot.sentMessages.lookupSent[bot.sentMessages.sentCounter] = handler.messageID
+			bot.sentMessages.lookupSenderSent[handler.MessageID] = newmsg.MessageID
+			bot.sentMessages.lookupSent[bot.sentMessages.sentCounter] = handler.MessageID
 
 			bot.sentMessages.sentCounter++
 			// copie esplicite necessarie perchè le map non ritornano memoria dopo i delete
@@ -142,7 +151,7 @@ func (bot *Bot) SendMessageResponseToPrivate(handler MessageHandler, text string
 	opt.ForcePrivate = true
 	bot.SendMessageResponse(handler, text, opt)
 
-	if !handler.isPrivate {
+	if !handler.IsPrivate {
 		opt.ForcePrivate = false
 		opt.ReplyToSenderMessage = true
 		bot.SendMessageResponse(handler, "pvt", opt)

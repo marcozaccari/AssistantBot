@@ -6,7 +6,18 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-func (bot *Bot) processUpdate(update tgbotapi.Update) error {
+// Processor implementa i metodi per processare comandi e messaggi semplici
+type Processor interface {
+	Help() string
+	Version() string
+
+	// Restituiscono true quando il comando o messaggio è stato effettivamente processato
+	ProcessUpdate(update tgbotapi.Update) (bool, error)
+	ProcessCommand(handler MessageHandler, command string, params []string) (bool, error)
+	ProcessMessage(handler MessageHandler, text string) (bool, error)
+}
+
+func (bot *Bot) ProcessUpdate(update tgbotapi.Update) (bool, error) {
 
 	if bot.Debug {
 		log.Printf("(new update) %+v %+v\n", update.Message, update.EditedMessage)
@@ -21,7 +32,7 @@ func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 
 	allowed, canProcessCommands := bot.allowedUpdate(&update)
 	if !allowed {
-		return nil
+		return true, nil
 	}
 
 	// parse update
@@ -45,16 +56,16 @@ func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 		}
 
 		handler := MessageHandler{
-			userID:        message.From.ID,
-			username:      message.From.UserName,
-			chatID:        chatID,
-			isPrivate:     isPrivateChat,
-			messageID:     message.MessageID,
-			replyUserID:   replyUserID,
-			replyUsername: replyUsername,
+			UserID:        message.From.ID,
+			Username:      message.From.UserName,
+			ChatID:        chatID,
+			IsPrivate:     isPrivateChat,
+			MessageID:     message.MessageID,
+			ReplyUserID:   replyUserID,
+			ReplyUsername: replyUsername,
 		}
 		if edited {
-			handler.editMessageID = bot.sentMessages.lookupSenderSent[message.MessageID]
+			handler.EditMessageID = bot.sentMessages.lookupSenderSent[message.MessageID]
 		}
 
 		if canProcessCommands {
@@ -68,7 +79,7 @@ func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 
 				u, ok := bot.getUserByID(message.From.ID)
 				if ok {
-					handler.group = u.Group
+					handler.Group = u.Group
 
 					// risincronizza se necessario i dati dell'utente
 					if u.Username != message.From.UserName {
@@ -80,26 +91,29 @@ func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 					}
 				}
 
+				// delega i comandi ai processori.
+				// il primo che processa interrompe la coda.
 				for _, p := range bot.processors {
 					processed, err := p.ProcessCommand(handler, command, params)
 					if err != nil {
-						return err
+						return true, err
 					}
 					if processed {
 						break
 					}
 				}
 
-				return nil
+				return true, nil
 			}
 		}
 
-		// controlla se è il caso di processare i messaggi semplici
 		if bot.config.ProcessGroupMessages && !bot.silenceOn {
+			// delega i messaggi semplici ai processori.
+			// il primo che processa interrompe la coda.
 			for _, p := range bot.processors {
 				processed, err := p.ProcessMessage(handler, message.Text)
 				if err != nil {
-					return err
+					return true, err
 				}
 				if processed {
 					break
@@ -108,5 +122,5 @@ func (bot *Bot) processUpdate(update tgbotapi.Update) error {
 		}
 	}
 
-	return nil
+	return true, nil
 }

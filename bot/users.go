@@ -142,7 +142,7 @@ func (bot *Bot) initUsers() {
 }
 
 func (bot *Bot) processUserCommand(handler MessageHandler, params []string) error {
-	if handler.group != groupOwner && handler.group != groupAdmin {
+	if handler.Group != groupOwner && handler.Group != groupAdmin {
 		if bot.Verbose {
 			log.Println("No permission for command")
 		}
@@ -186,18 +186,18 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 
 		} else {
 
-			switch handler.replyUserID {
+			switch handler.ReplyUserID {
 			case 0:
 				showHelp()
 
 			default:
-				userID = int(handler.replyUserID)
-				username = handler.replyUsername
+				userID = int(handler.ReplyUserID)
+				username = handler.ReplyUsername
 			}
 
 		}
 
-		if userID == bot.tgbot.Self.ID {
+		if userID == bot.Tgbot.Self.ID {
 			userID = 0
 			errorStr = "lol"
 		}
@@ -219,7 +219,7 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 		userID, username, response = getUser(1)
 
 		if userID > 0 {
-			if userID == handler.userID {
+			if userID == handler.UserID {
 				response = "Your are already in whitelist"
 			} else {
 				u := user{

@@ -88,6 +88,9 @@ func (bot *Bot) parseCommand(message *tgbotapi.Message) (command string, params 
 
 	if isCommand {
 		fields = strings.Fields(text)
+		if len(fields) == 0 {
+			return
+		}
 
 		command = fields[0]
 		ok = true
@@ -121,7 +124,7 @@ func (bot *Bot) ProcessCommand(handler MessageHandler, command string, params []
 		// reset owner
 		if len(params) > 0 {
 			if params[0] == bot.config.SecureToken {
-				bot.resetOwner(handler.userID, handler.username, handler.chatID)
+				bot.resetOwner(handler.UserID, handler.Username, handler.ChatID)
 
 				text := "You are the owner of this bot, now"
 				opt := bot.NewMessageResponseOpt()
@@ -131,8 +134,13 @@ func (bot *Bot) ProcessCommand(handler MessageHandler, command string, params []
 		return true, nil
 
 	case commandPing:
+		var text string
+		for i, p := range bot.processors {
+			text += bot.processorsNames[i] + " <code>" + p.Version() + "</code>\n"
+		}
+
 		opt := bot.NewMessageResponseOpt()
-		bot.SendMessageResponse(handler, "pong (v.<code>"+version+"</code>)", opt)
+		bot.SendMessageResponse(handler, text, opt)
 
 	case commandSilence:
 		bot.processSilenceCommand(handler, params)

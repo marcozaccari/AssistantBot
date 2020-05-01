@@ -12,7 +12,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
-const version = "1.0.0"
+const version = "1.0.2"
 
 // Bot - incapsula lo stack di Telegram
 type Bot struct {
@@ -33,20 +33,13 @@ type Bot struct {
 
 	sentMessages sentMessagesLookups
 
-	processors []Processor
+	processors      []Processor
+	processorsNames []string
 
 	silenceOn    bool
 	timerSilence *time.Timer
 
-	tgbot *tgbotapi.BotAPI
-}
-
-// Processor implementa i metodi per processare comandi e messaggi semplici
-type Processor interface {
-	Help() string
-	// Restituiscono true quando il comando o messaggio è stato effettivamente processato
-	ProcessCommand(handler MessageHandler, command string, params []string) (bool, error)
-	ProcessMessage(handler MessageHandler, text string) (bool, error)
+	Tgbot *tgbotapi.BotAPI
 }
 
 func (bot *Bot) initStack() error {
@@ -58,17 +51,17 @@ func (bot *Bot) initStack() error {
 	}
 
 	var err error
-	bot.tgbot, err = tgbotapi.NewBotAPI(bot.config.SecureToken)
+	bot.Tgbot, err = tgbotapi.NewBotAPI(bot.config.SecureToken)
 	if err != nil {
 		return errors.New("(stack) " + err.Error())
 	}
 
-	//bot.tgbot.Debug = true
+	//bot.Tgbot.Debug = true
 
 	if bot.Verbose {
-		bot.username = bot.tgbot.Self.UserName
-		bot.userID = bot.tgbot.Self.ID
-		log.Printf("(stack) Bot username \"%s\"", bot.tgbot.Self.UserName)
+		bot.username = bot.Tgbot.Self.UserName
+		bot.userID = bot.Tgbot.Self.ID
+		log.Printf("(stack) Bot username \"%s\"", bot.Tgbot.Self.UserName)
 	}
 
 	bot.initUsers()
@@ -94,10 +87,19 @@ func (bot *Bot) init(configFilename string) error {
 	return nil
 }
 
+// Version - return bot version
+func (bot *Bot) Version() string {
+	return version
+}
+
 // RegisterProcessor aggiunge un processor al bot, estendendone le funzionalità
 func (bot *Bot) RegisterProcessor(name string, processor Processor, configData interface{}) {
+	name = strings.Title(name)
+
 	bot.processors = append(bot.processors, processor)
-	bot.RegisterConfig(strings.Title(name), configData)
+	bot.processorsNames = append(bot.processorsNames, name)
+
+	bot.RegisterConfig(name, configData)
 }
 
 // Do - processa in modo bloccante le updates di Telegram.
@@ -124,7 +126,7 @@ func (bot *Bot) Do() error {
 	u := tgbotapi.NewUpdate(offset)
 	u.Timeout = 300
 
-	updates, err := bot.tgbot.GetUpdatesChan(u)
+	updates, err := bot.Tgbot.GetUpdatesChan(u)
 	if err != nil {
 		return errors.New("(stack) " + err.Error())
 	}
@@ -133,9 +135,21 @@ func (bot *Bot) Do() error {
 
 	// bloccante
 	for update := range updates {
-		err = bot.processUpdate(update)
-		if err != nil {
-			return err
+		// Delega le update ai processori nel modo più trasparente possibile.
+		// Il primo che processa interrompe la coda.
+		// L'ordine dei processori è inverso; l'ultimo, che è questo oggetto bot,
+		// parserà comandi e messaggi (richiamando a sua volta i rispettivi metodi
+		// dei processori) soltanto se nessuno ha già processato le update.
+		for i := len(bot.processors) - 1; i >= 0; i-- {
+			p := bot.processors[i]
+
+			processed, err := p.ProcessUpdate(update)
+			if err != nil {
+				return err
+			}
+			if processed {
+				break
+			}
 		}
 	}
 
