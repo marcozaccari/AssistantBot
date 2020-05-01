@@ -23,10 +23,6 @@ func (bot *Bot) ProcessUpdate(update tgbotapi.Update) (bool, error) {
 		log.Printf("(new update) %+v %+v\n", update.Message, update.EditedMessage)
 	}
 
-	var command string
-	var params []string
-	var chatID int64
-	var isPrivateChat bool
 	var replyUserID int
 	var replyUsername string
 
@@ -46,79 +42,93 @@ func (bot *Bot) ProcessUpdate(update tgbotapi.Update) (bool, error) {
 		edited = true
 	}
 
-	if message != nil {
-		chatID = message.Chat.ID
-		isPrivateChat = message.Chat.IsPrivate()
+	if message == nil {
+		return false, nil
+	}
 
-		if message.ReplyToMessage != nil {
-			replyUserID = message.ReplyToMessage.From.ID
-			replyUsername = message.ReplyToMessage.From.UserName
+	if message.ReplyToMessage != nil {
+		replyUserID = message.ReplyToMessage.From.ID
+		replyUsername = message.ReplyToMessage.From.UserName
+	}
+
+	handler := MessageHandler{
+		UserID:        message.From.ID,
+		Username:      message.From.UserName,
+		ChatID:        message.Chat.ID,
+		IsPrivate:     message.Chat.IsPrivate(),
+		MessageID:     message.MessageID,
+		ReplyUserID:   replyUserID,
+		ReplyUsername: replyUsername,
+	}
+	if edited {
+		handler.EditMessageID = bot.sentMessages.lookupSenderSent[message.MessageID]
+	}
+
+	if canProcessCommands {
+		processed, err := bot.processMessageAsCommand(message, handler)
+		if err != nil {
+			return true, err
 		}
-
-		handler := MessageHandler{
-			UserID:        message.From.ID,
-			Username:      message.From.UserName,
-			ChatID:        chatID,
-			IsPrivate:     isPrivateChat,
-			MessageID:     message.MessageID,
-			ReplyUserID:   replyUserID,
-			ReplyUsername: replyUsername,
+		if processed {
+			return true, nil
 		}
-		if edited {
-			handler.EditMessageID = bot.sentMessages.lookupSenderSent[message.MessageID]
-		}
+	}
 
-		if canProcessCommands {
-			var ok bool
-			command, params, ok = bot.parseCommand(message)
-			if ok {
-
-				if bot.Debug {
-					log.Printf("(stack) Command from %s/%s: %s %v\n", message.Chat.Title, message.From.UserName, command, params)
-				}
-
-				u, ok := bot.getUserByID(message.From.ID)
-				if ok {
-					handler.Group = u.Group
-
-					// risincronizza se necessario i dati dell'utente
-					if u.Username != message.From.UserName {
-						bot.updateUsername(u, message.From.UserName)
-					}
-					if isPrivateChat &&
-						(u.PrivateChatID != chatID) {
-						bot.updateUserPrivateChatID(u, chatID)
-					}
-				}
-
-				// delega i comandi ai processori.
-				// il primo che processa interrompe la coda.
-				for _, p := range bot.processors {
-					processed, err := p.ProcessCommand(handler, command, params)
-					if err != nil {
-						return true, err
-					}
-					if processed {
-						break
-					}
-				}
-
-				return true, nil
+	if bot.config.ProcessGroupMessages && !bot.silenceOn {
+		// Delega i messaggi semplici ai processori.
+		// il primo che processa interrompe la coda.
+		for _, p := range bot.processors {
+			processed, err := p.ProcessMessage(handler, message.Text)
+			if err != nil {
+				return true, err
+			}
+			if processed {
+				break
 			}
 		}
+	}
 
-		if bot.config.ProcessGroupMessages && !bot.silenceOn {
-			// delega i messaggi semplici ai processori.
-			// il primo che processa interrompe la coda.
-			for _, p := range bot.processors {
-				processed, err := p.ProcessMessage(handler, message.Text)
-				if err != nil {
-					return true, err
-				}
-				if processed {
-					break
-				}
-			}
+	return true, nil
+}
+
+func (bot *Bot) processMessageAsCommand(message *tgbotapi.Message, handler MessageHandler) (bool, error) {
+	var command string
+	var params []string
+	var ok bool
+
+	command, params, ok = bot.parseCommand(message)
+
+	if !ok {
+		return false, nil
+	}
+
+	if bot.Debug {
+		log.Printf("(stack) Command from %s/%s: %s %v\n", message.Chat.Title, message.From.UserName, command, params)
+	}
+
+	u, ok := bot.getUserByID(message.From.ID)
+	if ok {
+		handler.Group = u.Group
+
+		// risincronizza se necessario i dati dell'utente
+		if u.Username != message.From.UserName {
+			bot.updateUsername(u, message.From.UserName)
+		}
+		if handler.IsPrivate &&
+			(u.PrivateChatID != message.Chat.ID) {
+			bot.updateUserPrivateChatID(u, message.Chat.ID)
+		}
+	}
+
+	// Delega i comandi ai processori.
+	// il primo che processa interrompe la coda.
+	for _, p := range bot.processors {
+		processed, err := p.ProcessCommand(handler, command, params)
+		if err != nil {
+			return true, err
+		}
+		if processed {
+			break
 		}
 	}
 

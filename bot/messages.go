@@ -30,6 +30,9 @@ type MessageResponseOpt struct {
 	ReplaceSenderMessage bool
 	LinksPreview         bool
 	HTMLformat           bool
+
+	KeyboardInline *tgbotapi.InlineKeyboardMarkup
+	KeyboardReply  *tgbotapi.ReplyKeyboardMarkup
 }
 
 // ogni quanti messaggi inviati (x2) deve pulire la prima metà di lookup*
@@ -86,16 +89,33 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 	// Send
 
 	if handler.EditMessageID > 0 {
+		// Modifica il precedente messaggio
 		msg := tgbotapi.NewEditMessageText(chatID, handler.EditMessageID, text)
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
 		} else {
 			msg.ParseMode = "MarkdownV2"
 		}
+
 		msg.DisableWebPagePreview = !opt.LinksPreview
 
 		bot.Tgbot.Send(msg)
+
+		if opt.KeyboardInline != nil /*|| opt.KeyboardReply != nil*/ {
+			var markup tgbotapi.InlineKeyboardMarkup
+
+			if opt.KeyboardInline != nil {
+				markup = *opt.KeyboardInline
+			}/* else if opt.KeyboardReply != nil {
+				markup = *opt.KeyboardReply
+			}*/
+
+			msg := tgbotapi.NewEditMessageReplyMarkup(chatID, handler.EditMessageID, markup)
+			bot.Tgbot.Send(msg)
+		}
+
 	} else {
+		// Invia un nuovo messaggio
 		msg := tgbotapi.NewMessage(chatID, text)
 		msg.ReplyToMessageID = replyMessageID
 		if opt.HTMLformat {
@@ -105,6 +125,12 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		}
 
 		msg.DisableWebPagePreview = !opt.LinksPreview
+
+		if opt.KeyboardInline != nil {
+			msg.ReplyMarkup = opt.KeyboardInline
+		} else if opt.KeyboardReply != nil {
+			msg.ReplyMarkup = opt.KeyboardReply
+		}
 
 		newmsg, _ := bot.Tgbot.Send(msg)
 

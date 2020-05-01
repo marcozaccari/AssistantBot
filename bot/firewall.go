@@ -18,39 +18,41 @@ func (bot *Bot) allowedUpdate(update *tgbotapi.Update) (allowed bool, canProcess
 		message = update.EditedMessage
 	}
 
-	if message != nil {
-		// Message
+	if message == nil {
+		return
+	}
 
-		if message.From.IsBot {
-			// i messaggi dei bot vengono scartati
-			return false, false
-		}
+	// Message
 
-		isPrivateChat := message.Chat.IsPrivate()
+	if message.From.IsBot {
+		// i messaggi dei bot vengono scartati
+		return false, false
+	}
 
-		if isPrivateChat && (message.Command() == superCommandOwner) {
-			// i super comandi possono essere ricevuti da sconosciuti, ma solo in chat private
-			allowed = true
-			canProcessCommands = true
-			return
-		}
+	isPrivateChat := message.Chat.IsPrivate()
 
-		_, ok := bot.getUserByID(message.From.ID)
-		if ok {
-			allowed = true
-			canProcessCommands = true
-			return
-		}
+	if isPrivateChat && (message.Command() == superCommandOwner) {
+		// i super comandi possono essere ricevuti da sconosciuti, ma solo in chat private
+		allowed = true
+		canProcessCommands = true
+		return
+	}
 
-		if bot.config.ProcessGroupMessages && !isPrivateChat {
-			allowed = true
-			canProcessCommands = false
-			return
-		}
+	_, ok := bot.getUserByID(message.From.ID)
+	if ok {
+		allowed = true
+		canProcessCommands = true
+		return
+	}
 
-		if bot.Debug {
-			log.Println("(firewall) From ID", message.From.ID, "not in allowed IDs")
-		}
+	if bot.config.ProcessGroupMessages && !isPrivateChat {
+		allowed = true
+		canProcessCommands = false
+		return
+	}
+
+	if bot.Debug {
+		log.Println("(firewall) From ID", message.From.ID, "not in allowed IDs")
 	}
 
 	return

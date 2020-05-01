@@ -110,9 +110,15 @@ func (bot *Bot) parseCommand(message *tgbotapi.Message) (command string, params 
 func (bot *Bot) ProcessCommand(handler MessageHandler, command string, params []string) (bool, error) {
 	switch command {
 
-	case "help":
-		fallthrough
 	case "start":
+		if len(params) > 0 {
+			// In presenza di parametri evita di processare, poichè potrebbe trattarsi di una InlineQuery
+			// probabilmente gestita da un altro processore applicativo.
+			return false, nil
+		}
+		fallthrough
+
+	case "help":
 		var help string
 		for _, p := range bot.processors {
 			help += p.Help() + "\n"
