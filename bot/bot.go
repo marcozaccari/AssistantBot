@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"modulo.srl/AssistantBot/settings"
+	"github.com/marcozaccari/AssistantBot/settings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )

@@ -1,4 +1,4 @@
-module modulo.srl/assistantBot
+module github.com/marcozaccari/AssistantBot
 
 go 1.14
 
