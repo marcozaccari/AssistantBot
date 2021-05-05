@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"html"
 	"log"
 	"sync"
 
@@ -93,6 +94,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		msg := tgbotapi.NewEditMessageText(chatID, handler.EditMessageID, text)
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
+			msg.Text = html.EscapeString(msg.Text)
 		} else {
 			msg.ParseMode = "MarkdownV2"
 		}
@@ -120,6 +122,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		msg.ReplyToMessageID = replyMessageID
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
+			msg.Text = html.EscapeString(msg.Text)
 		} else {
 			msg.ParseMode = "MarkdownV2"
 		}
