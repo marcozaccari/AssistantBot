@@ -10,17 +10,30 @@ type userGroup string
 
 const (
 	groupOwner userGroup = "owner"
-	groupAdmin           = "admin"
+	groupAdmin userGroup = "admin"
 )
 
 type user struct {
 	ID            int
 	Username      string
+	Email         string
 	Group         userGroup
 	PrivateChatID int64
 }
 
 type usersLookupMap map[int]*user
+
+func (bot *Bot) GetUserEmail(userID int) (email string, ok bool) {
+	bot.configLock.Lock()
+	defer bot.configLock.Unlock()
+
+	u, ok := bot.lookupUsers[userID]
+	if !ok {
+		return "", false
+	}
+
+	return u.Email, true
+}
 
 func (bot *Bot) getUserByID(ID int) (u *user, ok bool) {
 	u, ok = bot.lookupUsers[ID]
@@ -156,13 +169,14 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 				"  <code>add {id}</code>  Add user to whitelist\n" +
 				"  <code>remove {id|username}</code>  Remove user from whitelist\n" +
 				"  <code>group [none|admin] {id|username}</code>  Change user's group\n" +
+				"  <code>email {address} {id|username}</code>  Change user's e-mail (\"none\" = unset)\n" +
 				"\nHint: <code>{id}</code> could be avoided by replying to a user's message"
 
 		opt := bot.NewMessageResponseOpt()
 		bot.SendMessageResponseToPrivate(handler, help, opt)
 	}
 
-	getUser := func(paramIdx int) (int, string, string) {
+	parseUser := func(paramIdx int) (int, string, string) {
 		var userID int
 		var username string
 		var errorStr string
@@ -216,7 +230,7 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 
 	switch params[0] {
 	case "add":
-		userID, username, response = getUser(1)
+		userID, username, response = parseUser(1)
 
 		if userID > 0 {
 			if userID == handler.UserID {
@@ -236,7 +250,7 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 		}
 
 	case "remove":
-		userID, _, response = getUser(1)
+		userID, _, response = parseUser(1)
 
 		if userID > 0 {
 			if userID == bot.config.OwnerID {
@@ -261,7 +275,7 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 			return nil
 		}
 
-		userID, username, response = getUser(2)
+		userID, username, response = parseUser(2)
 
 		if userID > 0 {
 			u, ok := bot.getUserByID(userID)
@@ -280,6 +294,34 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 			response = fmt.Sprintf("User <code>%v %v</code> set to <code>%v</code>", userID, username, group)
 		}
 
+	case "email":
+		if len(params) < 2 {
+			showHelp()
+			return nil
+		}
+		email := params[1]
+
+		userID, username, response = parseUser(2)
+
+		if userID > 0 {
+			u, ok := bot.getUserByID(userID)
+			if !ok {
+				response = fmt.Sprintf("User <code>%v</code> not exists", userID)
+				break
+			}
+
+			if email == "none" {
+				u.Email = ""
+				email = "(none)"
+			} else {
+				u.Email = email
+			}
+
+			bot.addUser(*u, false)
+
+			response = fmt.Sprintf("User <code>%v %v</code> email: <code>%v</code>", userID, username, email)
+		}
+
 	case "list":
 		response = "Users list:\n\n"
 
@@ -290,11 +332,15 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 				response += " <b>" + u.Username + "</b>"
 			}
 
+			if u.Email != "" {
+				response += " " + u.Email
+			}
+
 			switch u.Group {
 			case groupOwner:
-				response += "<code>★</code>"
+				response += " <code>★</code>"
 			case groupAdmin:
-				response += "<code>☆</code>"
+				response += " <code>☆</code>"
 			}
 
 			if u.PrivateChatID == 0 {

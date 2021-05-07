@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"html"
 	"log"
 	"sync"
 
@@ -94,7 +93,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		msg := tgbotapi.NewEditMessageText(chatID, handler.EditMessageID, text)
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
-			msg.Text = html.EscapeString(msg.Text)
+			//msg.Text = html.EscapeString(msg.Text)
 		} else {
 			msg.ParseMode = "MarkdownV2"
 		}
@@ -108,7 +107,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 
 			if opt.KeyboardInline != nil {
 				markup = *opt.KeyboardInline
-			}/* else if opt.KeyboardReply != nil {
+			} /* else if opt.KeyboardReply != nil {
 				markup = *opt.KeyboardReply
 			}*/
 
@@ -122,7 +121,7 @@ func (bot *Bot) SendMessageResponse(handler MessageHandler, text string, opt Mes
 		msg.ReplyToMessageID = replyMessageID
 		if opt.HTMLformat {
 			msg.ParseMode = "HTML"
-			msg.Text = html.EscapeString(msg.Text)
+			//msg.Text = html.EscapeString(msg.Text)
 		} else {
 			msg.ParseMode = "MarkdownV2"
 		}
