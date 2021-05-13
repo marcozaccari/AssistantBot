@@ -128,9 +128,9 @@ func (bot *Bot) processMessageAsCommand(message *tgbotapi.Message, handler Messa
 			return true, err
 		}
 		if processed {
-			break
+			return true, nil
 		}
 	}
 
-	return true, nil
+	return false, nil
 }
