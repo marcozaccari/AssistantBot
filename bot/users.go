@@ -154,6 +154,37 @@ func (bot *Bot) initUsers() {
 	}
 }
 
+// ParseUserID ritorna l'ID utente specificato dalla stringa in input.
+// Se numerico lo ritorna tale e quale (mustExists verifica che l'utente esista nel DB interno).
+// Se "username" o "@username" cerca l'utente corrispondente nel DB interno.
+func (bot *Bot) ParseUserID(s string, mustExists bool) int {
+	userID, err := strconv.Atoi(s)
+
+	if err != nil {
+		userID = 0
+
+		if s[0] == '@' {
+			s = s[1:]
+		}
+
+		u, ok := bot.getUserByUsername(s)
+		if ok {
+			userID = u.ID
+		}
+
+		return userID
+	}
+
+	if mustExists {
+		u, ok := bot.getUserByID(userID)
+		if ok {
+			userID = u.ID
+		}
+	}
+
+	return userID
+}
+
 func (bot *Bot) processUserCommand(handler MessageHandler, params []string) error {
 	if handler.Group != groupOwner && handler.Group != groupAdmin {
 		if bot.Verbose {
@@ -182,20 +213,9 @@ func (bot *Bot) processUserCommand(handler MessageHandler, params []string) erro
 		var errorStr string
 
 		if len(params) > paramIdx {
-			var err error
-			userID, err = strconv.Atoi(params[paramIdx])
-			if err != nil {
-				name := params[paramIdx]
-				if name[0] == '@' {
-					name = name[1:]
-				}
-
-				u, ok := bot.getUserByUsername(name)
-				if ok {
-					userID = u.ID
-				} else {
-					errorStr = "Invalid UserID"
-				}
+			userID = bot.ParseUserID(params[paramIdx], false)
+			if userID == 0 {
+				errorStr = "Invalid UserID"
 			}
 
 		} else {
