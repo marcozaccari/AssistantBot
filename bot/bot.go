@@ -99,7 +99,9 @@ func (bot *Bot) RegisterProcessor(name string, processor Processor, configData i
 	bot.processors = append(bot.processors, processor)
 	bot.processorsNames = append(bot.processorsNames, name)
 
-	bot.RegisterConfig(name, configData)
+	if configData != nil {
+		bot.RegisterConfig(name, configData)
+	}
 }
 
 // Do - processa in modo bloccante le updates di Telegram.
